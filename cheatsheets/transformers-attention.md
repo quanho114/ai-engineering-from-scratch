@@ -1,9 +1,11 @@
 ---
 id: transformers-attention
 title: Transformers and Attention
+code: TA
 subtitle: Compute attention, mask it, split heads, add positions and stack the block. PyTorch and NumPy from the lessons.
 hue: 12
 sources: phases/07-transformers-deep-dive/02-self-attention-from-scratch, phases/07-transformers-deep-dive/03-multi-head-attention, phases/07-transformers-deep-dive/04-positional-encoding, phases/07-transformers-deep-dive/05-full-transformer, phases/07-transformers-deep-dive/07-gpt-causal-language-modeling, phases/07-transformers-deep-dive/12-kv-cache-flash-attention, phases/07-transformers-deep-dive/13-scaling-laws, phases/07-transformers-deep-dive/14-build-a-transformer-capstone, phases/05-nlp-foundations-to-advanced/10-attention-mechanism, phases/19-capstone-projects/32-token-positional-embeddings, phases/19-capstone-projects/33-multihead-self-attention, phases/19-capstone-projects/34-transformer-block, phases/19-capstone-projects/35-gpt-model-assembly, phases/10-llms-from-scratch/04-pre-training-mini-gpt
+source_hash: 06904d9e0a23754d
 ---
 
 ## One pre-LN decoder block
@@ -117,7 +119,7 @@ from: phases/07-transformers-deep-dive/04-positional-encoding/docs/en.md, phases
 | Init std | 0.02 | Linear and Embedding weights |
 | Residual projection scale | 1 / sqrt(2 * num_layers) | out_proj and fc2 |
 | GPT-2 small d_model | 768 | 12 heads, 12 layers, about 124M |
-| KV bytes per token per layer | `2 * d_head * dtype_size` | per head, K and V |
+| KV bytes per token per layer | `2 * n_kv_heads * d_head * dtype_size` | all KV heads, K and V |
 | Compute optimal ratio | 20 | tokens per parameter |
 
 ## Troubleshooting

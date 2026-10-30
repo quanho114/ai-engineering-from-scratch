@@ -8,6 +8,8 @@ const markdown = require('./lesson-markdown');
 const { phaseSlug } = require('../lib/hub-routes');
 const { SITE_HEADER } = require('./build-hubs');
 const { versionHtml } = require('./version-assets');
+const topicMap = require('./cheatsheet-topics');
+const evidenceCheck = require('./cheatsheet-evidence');
 
 const ORIGIN = 'https://aiengineeringfromscratch.com';
 const REPO = 'https://github.com/rohitg00/ai-engineering-from-scratch';
@@ -22,6 +24,22 @@ const COLUMNS = 4;
 const MAX_PAGES = 2;
 const PAGE_BUDGETS = [870, 930];
 const MAX_SUBTITLE = 120;
+const SEARCH_DETAIL = 60;
+const KIND_LABELS = { concept: 'Concepts', commands: 'Commands and APIs', comparison: 'Comparisons', debugging: 'Debugging', manual: 'Manuals', project: 'Projects' };
+const TRACKS = [
+  ['foundations', 'Foundations', ['00', '01', '02', '03']],
+  ['vision-audio', 'Vision and audio', ['04', '06']],
+  ['language', 'Language and transformers', ['05', '07', '10']],
+  ['generative', 'Generative and multimodal', ['08', '12']],
+  ['rl-safety', 'RL, safety and alignment', ['09', '18']],
+  ['llm-engineering', 'LLM engineering', ['11']],
+  ['tools', 'Tools and protocols', ['13']],
+  ['agents', 'Agents and autonomy', ['14', '15', '16']],
+  ['production', 'Production and infrastructure', ['17']],
+  ['capstones', 'Capstones', ['19']],
+  ['manuals', 'Manuals', []],
+  ['projects', 'Projects', []],
+];
 const FONT_LINK = 'https://fonts.googleapis.com/css2?family=VT323&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap';
 const THEME_SCRIPT = "(function(){var r=document.documentElement,s='';try{s=localStorage.getItem('theme')||'';}catch(_){}r.setAttribute('data-theme',s||(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));function i(){var e=document.getElementById('themeIcon');if(e)e.textContent=r.getAttribute('data-theme')==='light'?'N':'D';}document.addEventListener('DOMContentLoaded',function(){i();var b=document.getElementById('themeToggle');if(b)b.addEventListener('click',function(){var n=r.getAttribute('data-theme')==='light'?'dark':'light';r.setAttribute('data-theme',n);try{localStorage.setItem('theme',n);}catch(_){}i();});});})();";
 const HEAD_ASSETS = '<link rel="stylesheet" href="/style.css">\n<link rel="stylesheet" href="/cheatsheets.css">';
@@ -36,6 +54,7 @@ const TYPES = {
   flow: { group: 'see', label: 'See' },
   architecture: { group: 'see', label: 'See' },
   defaults: { group: 'numbers', label: 'Numbers' },
+  comparison: { group: 'compare', label: 'Compare' },
   troubleshooting: { group: 'fix', label: 'Fix' },
   qa: { group: 'recall', label: 'Recall' },
   tips: { group: 'recall', label: 'Recall' },
@@ -45,6 +64,7 @@ const GROUPS = [
   ['do', 'Tasks and commands'],
   ['code', 'Annotated code'],
   ['see', 'Diagrams'],
+  ['compare', 'Comparisons'],
   ['numbers', 'Defaults and numbers'],
   ['fix', 'Troubleshooting'],
   ['recall', 'Questions and tips'],
@@ -54,9 +74,10 @@ const TABLE_SHAPES = {
   'command-table': 2,
   defaults: 3,
   troubleshooting: 3,
+  comparison: 'header',
 };
 const SOURCE_EXTENSIONS = /\.(?:md|py|ts|js|mjs|rs|jl|go|sh|txt|log|json|jsonl|yaml|yml|toml|csv)$/;
-const COMMENT = { bash: /\s{2,}#\s/, sh: /\s{2,}#\s/, python: /\s{2,}#\s/, py: /\s{2,}#\s/, yaml: /\s{2,}#\s/, text: /\s{2,}#\s/, typescript: /\s{2,}\/\/\s/, ts: /\s{2,}\/\/\s/, javascript: /\s{2,}\/\/\s/, js: /\s{2,}\/\/\s/, rust: /\s{2,}\/\/\s/ };
+const COMMENT = { bash: /\s{2,}#\s/, sh: /\s{2,}#\s/, python: /\s{2,}#\s/, py: /\s{2,}#\s/, yaml: /\s{2,}#\s/, text: /\s{2,}#\s/, typescript: /\s{2,}\/\/\s/, ts: /\s{2,}\/\/\s/, javascript: /\s{2,}\/\/\s/, js: /\s{2,}\/\/\s/, rust: /\s{2,}\/\/\s/, go: /\s{2,}\/\/\s/, tsx: /\s{2,}\/\/\s/ };
 const FULL_COMMENT = /^\s*(?:#|\/\/)\s?/;
 
 function escapeHtml(value) {
@@ -106,7 +127,7 @@ function parseFrontMatter(lines, errors) {
   }
   let end = 1;
   for (; end < lines.length && lines[end] !== '---'; end++) {
-    const match = /^([a-z]+):\s*(.*)$/.exec(lines[end]);
+    const match = /^([a-z_]+):\s*(.*)$/.exec(lines[end]);
     if (match) meta[match[1]] = match[2].trim();
     else if (lines[end].trim()) errors.push(`front matter line ${end + 1} is not "key: value"`);
   }
@@ -241,7 +262,7 @@ function parseTopic(text, file = '') {
     ids.add(id);
     const col = block.meta.col ? Number(block.meta.col) : 0;
     if (block.meta.col && !(col >= 1 && col <= COLUMNS)) errors.push(`${where}: col must be 1 to ${COLUMNS}`);
-    const defaultSpan = ['annotated-code', 'architecture', 'troubleshooting', 'defaults'].includes(type) ? 2 : 1;
+    const defaultSpan = ['annotated-code', 'architecture', 'troubleshooting', 'defaults', 'comparison'].includes(type) ? 2 : 1;
     const span = block.meta.span ? Number(block.meta.span) : defaultSpan;
     if (!(span >= 1 && span <= COLUMNS)) errors.push(`${where}: span must be 1 to ${COLUMNS}`);
     if (col && col + span - 1 > COLUMNS) errors.push(`${where}: col ${col} with span ${span} runs past column ${COLUMNS}`);
@@ -249,8 +270,10 @@ function parseTopic(text, file = '') {
     if (TABLE_SHAPES[type]) {
       const table = parseTable(block.body);
       if (!table.rows.length) errors.push(`${where}: the table has no rows`);
+      const width = TABLE_SHAPES[type] === 'header' ? table.header.length : TABLE_SHAPES[type];
+      if (TABLE_SHAPES[type] === 'header' && !(width >= 3 && width <= 5)) errors.push(`${where}: a comparison table needs 3 to 5 columns`);
       for (const row of table.rows) {
-        if (row.length !== TABLE_SHAPES[type]) errors.push(`${where}: row "${row.join(' | ')}" needs ${TABLE_SHAPES[type]} cells`);
+        if (row.length !== width) errors.push(`${where}: row "${row.join(' | ')}" needs ${width} cells`);
       }
       out.header = table.header;
       out.rows = table.rows;
@@ -278,6 +301,7 @@ function parseTopic(text, file = '') {
     hue: Number.isFinite(hue) ? hue : 222,
     code: meta.code || initials(meta.title || ''),
     sources: splitList(meta.sources),
+    sourceHash: meta.source_hash || '',
     blocks: parsed,
     errors,
     hash: sha(text).slice(0, 12),
@@ -314,74 +338,252 @@ function svgText(lines, x, y, size, className, anchor = 'middle') {
   return lines.map((line, index) => `<text class="${className}" x="${x}" y="${y + index * size * 1.25}" font-size="${size}" text-anchor="${anchor}">${escapeHtml(line)}</text>`).join('');
 }
 
-function architectureSvg(source, narrow = false) {
-  const block = narrow ? { ...source, span: 1, id: `${source.id}-n`, nodes: source.nodes.map(node => ({ ...node, col: node.row, row: node.col })) } : source;
+const round1 = value => Math.round(value * 10) / 10;
+
+function segmentHitsBox(x1, y1, x2, y2, r, pad = 1) {
+  const left = r.x + pad;
+  const right = r.x + r.w - pad;
+  const top = r.y + pad;
+  const bottom = r.y + r.h - pad;
+  let t0 = 0;
+  let t1 = 1;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  for (const [p, q] of [[-dx, x1 - left], [dx, right - x1], [-dy, y1 - top], [dy, bottom - y1]]) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+function boxesOverlap(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+function edgeLabelBox(label, x, y, style) {
+  const lw = textWidth(label, 8.5) + 6;
+  if (style === 'above') return { x, y: y - 4, anchor: 'middle', knock: false, box: { x: x - lw / 2 + 3, y: y - 11, w: lw - 6, h: 9 } };
+  if (style === 'right') return { x: x + 5, y: y + 3, anchor: 'start', knock: false, box: { x: x + 5, y: y - 4, w: lw - 6, h: 9 } };
+  return { x, y: y + 3, anchor: 'middle', knock: true, box: { x: x - lw / 2, y: y - 6, w: lw, h: 12 } };
+}
+
+function placeArchitecture(block, gutter) {
   const width = 300 * (block.span || 1) + 14 * ((block.span || 1) - 1);
   const cols = Math.max(...block.nodes.map(node => node.col));
   const rows = Math.max(...block.nodes.map(node => node.row));
   const rowOf = new Map(block.nodes.map(node => [node.id, node]));
-  const sideLabels = block.edges.filter(edge => rowOf.get(edge.from) && rowOf.get(edge.to) && rowOf.get(edge.from).row === rowOf.get(edge.to).row && edge.label);
+  const sideLabels = block.edges.filter(edge => rowOf.get(edge.from) && rowOf.get(edge.to) && rowOf.get(edge.from).row === rowOf.get(edge.to).row && Math.abs(rowOf.get(edge.from).col - rowOf.get(edge.to).col) === 1 && edge.label);
   const wantGap = Math.max(28, ...sideLabels.map(edge => textWidth(edge.label, 8.5) + 12));
-  const gapX = cols > 1 ? Math.min(wantGap, (width * 0.36) / (cols - 1)) : 0;
-  const nodeW = (width - 2 - gapX * (cols - 1)) / cols;
+  const room = width - gutter;
+  const gapX = cols > 1 ? Math.min(wantGap, (room * 0.36) / (cols - 1)) : 0;
+  const nodeW = (room - 2 - gapX * (cols - 1)) / cols;
   const labelSize = 10.5;
   const subSize = 9;
   const laid = block.nodes.map(node => ({ ...node, labelLines: wrap(node.label, labelSize, nodeW - 10), subLines: node.sub ? wrap(node.sub, subSize, nodeW - 10) : [] }));
   const nodeH = Math.max(...laid.map(node => 10 + node.labelLines.length * labelSize * 1.25 + node.subLines.length * subSize * 1.25 + 4));
   const gapY = 34;
-  const height = rows * nodeH + (rows - 1) * gapY + 2;
   const box = node => ({ x: 1 + (node.col - 1) * (nodeW + gapX), y: 1 + (node.row - 1) * (nodeH + gapY), w: nodeW, h: nodeH });
-  const byId = new Map(laid.map(node => [node.id, node]));
-  const parts = [];
-  for (const edge of block.edges) {
-    const a = box(byId.get(edge.from));
-    const b = box(byId.get(edge.to));
+  const nodes = laid.map(node => ({ ...node, box: box(node) }));
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const rowTop = row => 1 + (row - 1) * (nodeH + gapY);
+  const laneSets = [];
+  for (let row = 0; row <= rows; row += 1) {
+    const centre = row === 0 ? rowTop(1) - 11 : row === rows ? rowTop(rows) + nodeH + 11 : rowTop(row) + nodeH + gapY / 2;
+    const offsets = row === 0 ? [0, -12] : row === rows ? [0, 12] : [0, -8, 8];
+    laneSets.push({ after: row, ys: offsets.map(offset => centre + offset), margin: row === 0 || row === rows });
+  }
+  const colLanes = [];
+  for (let col = 1; col < cols; col += 1) for (const offset of gapX >= 20 ? [0, -gapX / 4, gapX / 4] : [0]) colLanes.push(1 + col * (nodeW + gapX) - gapX / 2 + offset);
+  if (gutter) colLanes.push(width - gutter / 2);
+  const placedLabels = [];
+  const placedSegments = [];
+  const crossesNode = (edge, points) => points.slice(1).some((point, i) => nodes.some(node => node.id !== edge.from && node.id !== edge.to && segmentHitsBox(points[i][0], points[i][1], point[0], point[1], node.box)));
+  const labelFits = label => label.box.x >= 0 && label.box.x + label.box.w <= width && !nodes.some(node => boxesOverlap(label.box, node.box)) && !placedLabels.some(other => boxesOverlap(label.box, other));
+  const sharesLine = (x1, y1, x2, y2) => placedSegments.some(([sx1, sy1, sx2, sy2]) => {
+    if (Math.abs(y1 - y2) < 0.5 && Math.abs(sy1 - sy2) < 0.5 && Math.abs(sy1 - y1) < 3) return Math.min(Math.max(x1, x2), Math.max(sx1, sx2)) - Math.max(Math.min(x1, x2), Math.min(sx1, sx2)) > 2;
+    if (Math.abs(x1 - x2) < 0.5 && Math.abs(sx1 - sx2) < 0.5 && Math.abs(sx1 - x1) < 3) return Math.min(Math.max(y1, y2), Math.max(sy1, sy2)) - Math.max(Math.min(y1, y2), Math.min(sy1, sy2)) > 2;
+    return false;
+  });
+  const travel = points => points.slice(1).reduce((sum, [x2, y2], i) => sum + Math.abs(x2 - points[i][0]) + Math.abs(y2 - points[i][1]), 25 * (points.length - 2));
+  const penalty = (points, label) => {
+    let cost = 25 * (points.length - 2);
+    for (let i = 1; i < points.length; i += 1) {
+      const [x1, y1] = points[i - 1];
+      const [x2, y2] = points[i];
+      cost += Math.abs(x2 - x1) + Math.abs(y2 - y1);
+      for (const other of placedLabels) if (segmentHitsBox(x1, y1, x2, y2, other, 0)) cost += 60;
+      if (points.length > 2 && sharesLine(x1, y1, x2, y2)) cost += 80;
+    }
+    if (label) for (const seg of placedSegments) if (segmentHitsBox(...seg, label.box, 0)) cost += 40;
+    return cost;
+  };
+  const labelsOn = (edge, points, styles) => {
+    if (!edge.label) return [null];
+    const out = [];
+    for (let i = 1; i < points.length; i += 1) {
+      const [x1, y1] = points[i - 1];
+      const [x2, y2] = points[i];
+      const flat = Math.abs(y2 - y1) < 0.5;
+      const upright = Math.abs(x2 - x1) < 0.5;
+      const these = flat ? styles.flat : upright ? styles.upright : styles.slant;
+      if (!these) continue;
+      for (const t of [0.5, 0.3, 0.7]) for (const style of these) out.push(edgeLabelBox(edge.label, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, style));
+    }
+    return out;
+  };
+  const edges = block.edges.map(edge => {
+    const a = byId.get(edge.from).box;
+    const b = byId.get(edge.to).box;
     const ax = a.x + a.w / 2;
     const ay = a.y + a.h / 2;
     const bx = b.x + b.w / 2;
     const by = b.y + b.h / 2;
-    const clip = (r, dx, dy) => {
-      const tx = dx ? (r.w / 2) / Math.abs(dx) : Infinity;
-      const ty = dy ? (r.h / 2) / Math.abs(dy) : Infinity;
-      const t = Math.min(tx, ty);
-      return t;
-    };
     const dx = bx - ax;
     const dy = by - ay;
-    const t1 = clip(a, dx, dy);
-    const t2 = clip(b, dx, dy);
-    const x1 = ax + dx * t1;
-    const y1 = ay + dy * t1;
-    const x2 = bx - dx * t2;
-    const y2 = by - dy * t2;
-    const round = value => Math.round(value * 10) / 10;
-    parts.push(`<line class="cs-arch-edge" x1="${round(x1)}" y1="${round(y1)}" x2="${round(x2)}" y2="${round(y2)}" marker-end="url(#cs-arrow-${block.id})"/>`);
-    if (edge.label) {
-      const mx = round((x1 + x2) / 2);
-      const my = round((y1 + y2) / 2);
-      const lw = textWidth(edge.label, 8.5) + 6;
-      if (Math.abs(dy) < 1) {
-        parts.push(svgText([edge.label], mx, round(my - 4), 8.5, 'cs-arch-elabel'));
-      } else if (Math.abs(dx) < 1) {
-        parts.push(svgText([edge.label], round(mx + 5), round(my + 3), 8.5, 'cs-arch-elabel', 'start'));
-      } else {
-        parts.push(`<rect class="cs-arch-knock" x="${round(mx - lw / 2)}" y="${round(my - 6.5)}" width="${round(lw)}" height="12"/>`);
-        parts.push(svgText([edge.label], mx, round(my + 2.5), 8.5, 'cs-arch-elabel'));
+    const clip = r => Math.min(dx ? (r.w / 2) / Math.abs(dx) : Infinity, dy ? (r.h / 2) / Math.abs(dy) : Infinity);
+    const straight = [[ax + dx * clip(a), ay + dy * clip(a)], [bx - dx * clip(b), by - dy * clip(b)]];
+    const candidates = [];
+    const offer = (points, styles, extra = 0) => {
+      if (crossesNode(edge, points)) return;
+      for (const label of labelsOn(edge, points, styles)) {
+        if (label && !labelFits(label)) continue;
+        const cost = penalty(points, label);
+        candidates.push({ points, label, cost: cost + extra, clean: cost === travel(points) && extra < 80 });
+      }
+    };
+    offer(straight, { flat: ['above', 'knock'], upright: ['right', 'knock'], slant: ['knock'] }, sharesLine(...straight[0], ...straight[1]) ? 80 : 0);
+    const exit = (r, y) => (y > r.y + r.h / 2 ? r.y + r.h : r.y);
+    const side = (r, x) => (x > r.x + r.w / 2 ? r.x + r.w : r.x);
+    const rowAfter = r => Math.round((r.y - 1) / (nodeH + gapY));
+    const near = r => laneSets.filter(set => set.after === rowAfter(r) || set.after === rowAfter(r) + 1);
+    const ports = [0, -0.25, 0.25];
+    const settled = () => candidates.some(candidate => candidate.clean);
+    for (const set of laneSets) {
+      if (Math.abs(dx) < 1 || settled()) break;
+      for (const y of set.ys) {
+        for (const pa of ports) for (const pb of ports) {
+          const xa = ax + pa * a.w;
+          const xb = bx + pb * b.w;
+          offer([[xa, exit(a, y)], [xa, y], [xb, y], [xb, exit(b, y)]], { flat: ['knock'] }, (set.margin ? 150 : 0) + (pa || pb ? 10 : 0));
+        }
       }
     }
+    for (const x of colLanes) {
+      if (settled()) break;
+      offer([[side(a, x), ay], [x, ay], [x, by], [side(b, x), by]], { upright: ['knock'] });
+      for (const setA of near(a)) for (const setB of near(b)) {
+        for (const ya of setA.ys) for (const yb of setB.ys) {
+          for (const pa of ports) for (const pb of ports) {
+            const xa = ax + pa * a.w;
+            const xb = bx + pb * b.w;
+            offer([[xa, exit(a, ya)], [xa, ya], [x, ya], [x, yb], [xb, yb], [xb, exit(b, yb)]], { flat: ['knock'] }, (setA.margin ? 150 : 0) + (setB.margin ? 150 : 0) + (pa || pb ? 10 : 0));
+          }
+        }
+      }
+    }
+    candidates.sort((p, q) => p.cost - q.cost);
+    const chosen = candidates[0] || { points: straight, label: edge.label ? edgeLabelBox(edge.label, (straight[0][0] + straight[1][0]) / 2, (straight[0][1] + straight[1][1]) / 2, 'knock') : null };
+    if (chosen.label) placedLabels.push(chosen.label.box);
+    for (let i = 1; i < chosen.points.length; i += 1) placedSegments.push([...chosen.points[i - 1], ...chosen.points[i]]);
+    return { ...edge, points: chosen.points, place: chosen.label };
+  });
+  let minY = 0;
+  let maxY = rows * nodeH + (rows - 1) * gapY + 2;
+  for (const edge of edges) {
+    for (const [, y] of edge.points) {
+      minY = Math.min(minY, y - 2);
+      maxY = Math.max(maxY, y + 2);
+    }
+    if (edge.place) {
+      minY = Math.min(minY, edge.place.box.y - 1);
+      maxY = Math.max(maxY, edge.place.box.y + edge.place.box.h + 1);
+    }
   }
-  for (const node of laid) {
-    const r = box(node);
-    const round = value => Math.round(value * 10) / 10;
-    parts.push(`<rect class="cs-arch-node" x="${round(r.x)}" y="${round(r.y)}" width="${round(r.w)}" height="${round(r.h)}" rx="2"/>`);
-    if (node.kind) parts.push(`<path class="cs-arch-kind" transform="translate(${round(r.x + 4)} ${round(r.y + 4)}) scale(0.8)" d="${NODE_KINDS[node.kind]}"><title>${node.kind}</title></path>`);
+  return { block, width, minY, height: maxY - minY, nodes, edges, labelSize, subSize };
+}
+
+function layoutOverlaps({ width, nodes, edges }) {
+  const found = [];
+  const name = edge => `${edge.from} to ${edge.to}`;
+  for (const edge of edges) {
+    for (let i = 1; i < edge.points.length; i += 1) {
+      const [x1, y1] = edge.points[i - 1];
+      const [x2, y2] = edge.points[i];
+      for (const node of nodes) {
+        if (node.id !== edge.from && node.id !== edge.to && segmentHitsBox(x1, y1, x2, y2, node.box)) found.push(`edge ${name(edge)} crosses node ${node.id}`);
+      }
+    }
+    if (!edge.place) continue;
+    for (const node of nodes) if (boxesOverlap(edge.place.box, node.box)) found.push(`label of edge ${name(edge)} overlaps node ${node.id}`);
+    if (edge.place.box.x < 0 || edge.place.box.x + edge.place.box.w > width) found.push(`label of edge ${name(edge)} runs off the diagram`);
+  }
+  const labelled = edges.filter(edge => edge.place);
+  for (let i = 0; i < labelled.length; i += 1) {
+    for (let j = i + 1; j < labelled.length; j += 1) {
+      if (boxesOverlap(labelled[i].place.box, labelled[j].place.box)) found.push(`labels of edges ${name(labelled[i])} and ${name(labelled[j])} overlap`);
+    }
+  }
+  return [...new Set(found)];
+}
+
+const architectureCache = new WeakMap();
+
+function architectureLayout(source, narrow = false) {
+  const cached = architectureCache.get(source) || [];
+  if (!cached[Number(narrow)]) {
+    cached[Number(narrow)] = routeArchitecture(source, narrow);
+    architectureCache.set(source, cached);
+  }
+  return cached[Number(narrow)];
+}
+
+function routeArchitecture(source, narrow) {
+  const block = narrow ? { ...source, span: 1, id: `${source.id}-n`, nodes: source.nodes.map(node => ({ ...node, col: node.row, row: node.col })) } : source;
+  const plainLayout = placeArchitecture(block, 0);
+  const plainCount = layoutOverlaps(plainLayout).length;
+  if (!plainCount) return plainLayout;
+  const gutter = Math.min(120, Math.max(40, ...block.edges.map(edge => (edge.label ? textWidth(edge.label, 8.5) + 18 : 0))));
+  const guttered = placeArchitecture(block, gutter);
+  return layoutOverlaps(guttered).length < plainCount ? guttered : plainLayout;
+}
+
+function architectureOverlaps(source, narrow = false) {
+  return layoutOverlaps(architectureLayout(source, narrow));
+}
+
+function architectureSvg(source, narrow = false) {
+  const { block, width, minY, height, nodes, edges, labelSize, subSize } = architectureLayout(source, narrow);
+  const parts = [];
+  for (const edge of edges) {
+    const points = edge.points.map(([x, y]) => `${round1(x)},${round1(y)}`);
+    if (points.length === 2) {
+      const [[x1, y1], [x2, y2]] = edge.points;
+      parts.push(`<line class="cs-arch-edge" x1="${round1(x1)}" y1="${round1(y1)}" x2="${round1(x2)}" y2="${round1(y2)}" marker-end="url(#cs-arrow-${block.id})"/>`);
+    } else {
+      parts.push(`<polyline class="cs-arch-edge" fill="none" points="${points.join(' ')}" marker-end="url(#cs-arrow-${block.id})"/>`);
+    }
+    if (!edge.place) continue;
+    const label = edge.place;
+    if (label.knock) parts.push(`<rect class="cs-arch-knock" x="${round1(label.box.x)}" y="${round1(label.box.y)}" width="${round1(label.box.w)}" height="${round1(label.box.h)}"/>`);
+    parts.push(svgText([edge.label], round1(label.x), round1(label.y), 8.5, 'cs-arch-elabel', label.anchor));
+  }
+  for (const node of nodes) {
+    const r = node.box;
+    parts.push(`<rect class="cs-arch-node" x="${round1(r.x)}" y="${round1(r.y)}" width="${round1(r.w)}" height="${round1(r.h)}" rx="2"/>`);
+    if (node.kind) parts.push(`<path class="cs-arch-kind" transform="translate(${round1(r.x + 4)} ${round1(r.y + 4)}) scale(0.8)" d="${NODE_KINDS[node.kind]}"><title>${node.kind}</title></path>`);
     const top = r.y + (r.h - (node.labelLines.length * labelSize * 1.25 + node.subLines.length * subSize * 1.25)) / 2 + labelSize;
-    parts.push(svgText(node.labelLines, round(r.x + r.w / 2), round(top), labelSize, 'cs-arch-label'));
-    if (node.subLines.length) parts.push(svgText(node.subLines, round(r.x + r.w / 2), round(top + node.labelLines.length * labelSize * 1.25), subSize, 'cs-arch-sub'));
+    parts.push(svgText(node.labelLines, round1(r.x + r.w / 2), round1(top), labelSize, 'cs-arch-label'));
+    if (node.subLines.length) parts.push(svgText(node.subLines, round1(r.x + r.w / 2), round1(top + node.labelLines.length * labelSize * 1.25), subSize, 'cs-arch-sub'));
   }
   const marker = `<defs><marker id="cs-arrow-${block.id}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="cs-arch-head" d="M0,0 L8,4 L0,8 z"/></marker></defs>`;
   const title = `${block.title}: ${block.nodes.map(node => node.label).join(', ')}`;
-  return `<svg class="cs-arch${narrow ? ' cs-arch-narrow' : ' cs-arch-wide'}" viewBox="0 0 ${width} ${Math.round(height)}" role="img" aria-label="${escapeHtml(title)}">${marker}${parts.join('')}</svg>`;
+  return `<svg class="cs-arch${narrow ? ' cs-arch-narrow' : ' cs-arch-wide'}" viewBox="0 ${round1(minY)} ${width} ${Math.round(height)}" role="img" aria-label="${escapeHtml(title)}">${marker}${parts.join('')}</svg>`;
 }
 
 function flowSvg(block) {
@@ -481,13 +683,9 @@ function blockBody(block) {
 
 function blockHtml(block, place, href = '') {
   const group = TYPES[block.type] ? TYPES[block.type].group : 'know';
-  const from = block.from.map(source => {
-    const link = sourceLink(source);
-    return `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`;
-  }).join(', ');
   const style = place ? ` style="grid-column:${place.col} / span ${place.span};grid-row:${place.row} / span ${place.rows}"` : '';
   const wide = place && place.span > 1 ? ' cs-wide' : '';
-  return `<section class="cs-block cs-g-${group} cs-t-${block.type}${wide}" id="${block.id}"${style}><h2 class="cs-bar"><span>${placeholders(inline(block.title))}</span><a class="cs-anchor" href="${href}#${block.id}" aria-label="Link to this block">#</a></h2><div class="cs-bb">${blockBody(block)}</div><p class="cs-from">From ${from}</p></section>`;
+  return `<section class="cs-block cs-g-${group} cs-t-${block.type}${wide}" id="${block.id}"${style}><h2 class="cs-bar"><span>${placeholders(inline(block.title))}</span><a class="cs-anchor" href="${href}#${block.id}" aria-label="Link to this block">#</a></h2><div class="cs-bb">${blockBody(block)}</div></section>`;
 }
 
 function textLength(html) {
@@ -497,16 +695,35 @@ function textLength(html) {
 function estimateBlock(block) {
   const scale = block.span || 1;
   let h = 34;
-  if (TABLE_SHAPES[block.type]) {
-    const widths = block.type === 'troubleshooting' ? [14, 16, 20] : block.type === 'defaults' ? [12, 12, 16] : [18, 22];
-    h += 16;
-    for (const row of block.rows) h += 6 + 17 * Math.max(...row.map((cell, index) => Math.ceil(plain(cell).length / (widths[index] * scale)) || 1));
+  if (block.type === 'comparison') {
+    const width = (36 * scale) / block.header.length;
+    const lines = cells => Math.max(...cells.map(cell => Math.ceil(plain(cell).length / width) || 1));
+    h += 24 + 17 * (lines(block.header) - 1);
+    for (const row of block.rows) h += 6 + 17 * lines(row);
+  } else if (TABLE_SHAPES[block.type]) {
+    const widths = TABLE_WIDTHS[block.type] || TABLE_WIDTHS.default;
+    h += block.type === 'defaults' ? 30 : 16;
+    for (const row of block.rows) h += 6 + 17 * Math.max(...row.map((cell, index) => cellLines(cell, widths[index] * scale)));
   } else if (block.type === 'annotated-code') {
-    h += 18 + block.code.reduce((sum, line) => sum + (line.trim() ? 17 * Math.max(1, Math.ceil(line.length / (34 * scale))) : 6), 0);
+    const pattern = COMMENT[block.lang] || COMMENT.bash;
+    const noted = block.code.some(line => pattern.test(line) && !FULL_COMMENT.test(line));
+    h += 18;
+    for (const line of block.code) {
+      if (!line.trim()) {
+        h += 6;
+        continue;
+      }
+      const match = FULL_COMMENT.test(line) ? null : pattern.exec(line);
+      const code = match ? line.slice(0, match.index) : line;
+      const note = match ? line.slice(match.index + match[0].length) : '';
+      const codeLines = Math.ceil(code.length / ((noted ? 28 : 54) * scale)) || 1;
+      const noteLines = note ? Math.ceil(note.length / (20 * scale)) : 1;
+      h += 17 * Math.max(codeLines, noteLines);
+    }
   } else if (block.type === 'architecture' || block.type === 'flow') {
     const svg = block.type === 'architecture' ? architectureSvg(block) : flowSvg(block);
-    const viewBox = /viewBox="0 0 (\d+) (\d+)"/.exec(svg);
-    h += viewBox ? Number(viewBox[2]) * (330 * scale) / Number(viewBox[1]) : 200;
+    const viewBox = /viewBox="0 -?[\d.]+ (\d+) (\d+)"/.exec(svg);
+    h += viewBox ? Number(viewBox[2]) * (350 * scale) / Number(viewBox[1]) : 200;
   } else {
     for (const item of block.items) {
       if (block.type === 'qa') h += 8 + 18 * (Math.ceil(plain(item.lead).length / (40 * scale)) + Math.ceil(plain(item.text).length / (44 * scale)));
@@ -516,12 +733,43 @@ function estimateBlock(block) {
   return h + 16;
 }
 
+const TABLE_WIDTHS = { troubleshooting: [13, 15, 15], defaults: [13, 10, 20], 'command-table': [21, 21], default: [17, 26] };
+
+function cellLines(cell, width) {
+  const text = plain(cell);
+  if (!/`/.test(cell)) return Math.ceil(text.length / width) || 1;
+  let lines = 1;
+  let used = 0;
+  for (const word of text.split(/(?<=[\s=,/])/).filter(Boolean)) {
+    const size = word.trimEnd().length;
+    if (used && used + size > width) {
+      lines += 1;
+      used = 0;
+    }
+    if (size > width) {
+      lines += Math.ceil(size / width) - 1;
+      used = size % width;
+    } else {
+      used += word.length;
+    }
+  }
+  return lines;
+}
 const ROW_UNIT = 8;
 const STRETCH_ROWS = 40;
 const BLOCK_GAP = 12;
 
 function layout(topic) {
   const heights = topic.blocks.map(estimateBlock);
+  const natural = topic.blocks.map((_, index) => index);
+  const first = packBlocks(topic, heights, natural);
+  if (first.pages <= MAX_PAGES) return first;
+  const tallest = natural.slice().sort((a, b) => heights[b] * (topic.blocks[b].span || 1) - heights[a] * (topic.blocks[a].span || 1) || a - b);
+  const second = packBlocks(topic, heights, tallest);
+  return second.pages < first.pages ? second : first;
+}
+
+function packBlocks(topic, heights, order) {
   const pages = [];
   const newPage = () => {
     const budget = Math.floor((PAGE_BUDGETS[pages.length] || PAGE_BUDGETS[PAGE_BUDGETS.length - 1]) / ROW_UNIT);
@@ -548,7 +796,9 @@ function layout(topic) {
     }
     return best && { ...best, span };
   };
-  const places = topic.blocks.map((block, index) => {
+  const places = [];
+  order.forEach(index => {
+    const block = topic.blocks[index];
     const rows = Math.ceil((heights[index] + BLOCK_GAP) / ROW_UNIT);
     let pageIndex = 0;
     let spot = null;
@@ -560,7 +810,7 @@ function layout(topic) {
       spot = fit(page, block, Math.min(rows, page.budget)) || { col: 0, start: 0, span: Math.min(block.span || 1, COLUMNS) };
     }
     for (let k = 0; k < spot.span; k++) pages[pageIndex].taken[spot.col + k].push([spot.start, spot.start + rows]);
-    return { page: pageIndex, col: spot.col + 1, span: spot.span, row: spot.start + 1, rows };
+    places[index] = { page: pageIndex, col: spot.col + 1, span: spot.span, row: spot.start + 1, rows };
   });
   const used = pages.map(page => Math.max(0, ...page.taken.flat().map(([, b]) => b)) * ROW_UNIT);
   for (const place of places) {
@@ -594,7 +844,7 @@ function posterMain(topic, year, neighbours) {
     const link = sourceLink(source);
     return `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`;
   }).join('');
-  const head = `<header class="cs-poster-head"><div class="cs-title-block"><span class="cs-code" aria-hidden="true">${escapeHtml(topic.code)}</span><div><p class="cs-kicker"><a href="${BASE}">Cheat sheets</a></p><h1>${escapeHtml(topic.title)}</h1><p class="cs-sub">${placeholders(inline(topic.subtitle))}</p></div></div><div class="cs-head-side">${legendHtml(topic)}<p class="cs-actions"><button type="button" class="cs-print" data-print>Print</button><a href="${REPO}/blob/main/${TOPIC_DIR}/${topic.id}.md">Source</a></p></div></header>`;
+  const head = `<header class="cs-poster-head"><div class="cs-title-block"><span class="cs-code" aria-hidden="true">${escapeHtml(topic.code)}</span><div><p class="cs-kicker"><a href="${BASE}">Cheat sheets</a></p><h1>${escapeHtml(topic.title)}</h1><p class="cs-sub">${placeholders(inline(topic.subtitle))}</p></div></div><div class="cs-head-side">${legendHtml(topic)}<p class="cs-actions"><button type="button" class="cs-print" data-print>Print</button>${topic.explainer ? `<a href="/${escapeHtml(topic.explainer.replace(/\.html$/, ''))}">Interactive machine</a>` : ''}<a href="${REPO}/blob/main/${TOPIC_DIR}/${topic.id}.md">Source</a></p></div></header>`;
   const pager = [neighbours.previous && `<a href="${neighbours.previous.href}" rel="prev">← ${escapeHtml(neighbours.previous.title)}</a>`, `<a href="${BASE}">All cheat sheets</a>`, neighbours.next && `<a href="${neighbours.next.href}" rel="next">${escapeHtml(neighbours.next.title)} →</a>`].filter(Boolean).join('');
   const foot = `<footer class="cs-foot"><p class="cs-covers"><span>Covers</span>${sources}</p><nav class="cs-pager" aria-label="Cheat sheet navigation">${pager}</nav><p class="cs-stamp"><span>aiengineeringfromscratch.com${BASE}/${topic.id}</span><span>${copyLine(year)}</span><span>source ${topic.hash}</span></p></footer>`;
   return `<main id="main" class="cs-page cs-poster">${head}${cols}${foot}</main>`;
@@ -606,18 +856,22 @@ function topicCounts(topic) {
   return { blocks: topic.blocks.length, rows, diagrams };
 }
 
+function tileHtml(topic) {
+  const counts = topicCounts(topic);
+  return `<li class="cs-tile" data-kind="${topic.kind}" style="--h:${topic.hue}"><a href="${topic.href}"><span class="cs-code" aria-hidden="true">${escapeHtml(topic.code)}</span><span class="cs-tile-name">${escapeHtml(topic.title)}</span><span class="cs-tile-sub">${escapeHtml(plain(topic.subtitle))}</span><span class="cs-tile-meta"><span class="cs-tile-kind">${KIND_LABELS[topic.kind]}</span>${counts.rows} rows · ${counts.diagrams} ${counts.diagrams === 1 ? 'diagram' : 'diagrams'}</span></a></li>`;
+}
+
 function indexMain(topics, year, phases) {
-  const search = `<div class="cs-search" role="search"><label for="cs-q" class="cs-kicker">Search tasks, commands and terms</label><input id="cs-q" type="search" autocomplete="off" spellcheck="false" placeholder="mem fraction, causal mask, budget" data-index="${BASE}/search.json"><p class="cs-search-count" aria-live="polite"></p><ol class="cs-results" hidden></ol></div>`;
-  const tiles = topics.map(topic => {
-    const counts = topicCounts(topic);
-    return `<li class="cs-tile" style="--h:${topic.hue}"><a href="${topic.href}"><span class="cs-code" aria-hidden="true">${escapeHtml(topic.code)}</span><span class="cs-tile-name">${escapeHtml(topic.title)}</span><span class="cs-tile-sub">${escapeHtml(plain(topic.subtitle))}</span><span class="cs-tile-meta">${counts.rows} rows · ${counts.diagrams} diagrams · ${counts.blocks} blocks</span></a></li>`;
-  }).join('');
+  const search = `<div class="cs-search" role="search"><label for="cs-q" class="cs-kicker">Search topics, tasks, commands and terms</label><input id="cs-q" type="search" autocomplete="off" spellcheck="false" placeholder="mem fraction, causal mask, budget" data-index="${BASE}/search.json"><p class="cs-search-count" aria-live="polite"></p><ol class="cs-results" hidden></ol></div>`;
+  const tracks = TRACKS.map(([slug, label]) => ({ slug, label, topics: topics.filter(topic => topic.track === slug).sort((a, b) => a.title.localeCompare(b.title)) })).filter(track => track.topics.length);
+  const kinds = Object.keys(KIND_LABELS).map(kind => [kind, topics.filter(topic => topic.kind === kind).length]).filter(([, count]) => count);
+  const filters = `<div class="cs-filters"><div class="cs-filter-kinds" role="group" aria-label="Show one kind of sheet"><button type="button" data-kind="" aria-pressed="true">All <span>${topics.length}</span></button>${kinds.map(([kind, count]) => `<button type="button" data-kind="${kind}" aria-pressed="false">${KIND_LABELS[kind]} <span>${count}</span></button>`).join('')}</div><nav class="cs-track-nav" aria-label="Tracks">${tracks.map(track => `<a href="${BASE}#t-${track.slug}">${escapeHtml(track.label)} <span>${track.topics.length}</span></a>`).join('')}</nav><p class="cs-filter-count" aria-live="polite"></p></div>`;
+  const sections = tracks.map(track => `<section class="cs-index-section cs-track" id="t-${track.slug}" aria-labelledby="h-${track.slug}"><h2 id="h-${track.slug}">${escapeHtml(track.label)} <span class="cs-count">${track.topics.length}</span></h2><ol class="cs-tiles">${track.topics.map(tileHtml).join('')}</ol></section>`).join('');
   const byPhase = phases.filter(phase => phase.topics.length).map(phase => `<li id="p-${phase.slug}"><a href="/phase/${phase.slug}">${escapeHtml(phase.label)}</a><span>${phase.topics.map(topic => `<a href="${topic.href}">${escapeHtml(topic.title)}</a>`).join(', ')}</span></li>`).join('');
-  const head = `<header class="cs-index-head"><p class="cs-kicker">AI Engineering from Scratch</p><h1>Cheat sheets</h1><p class="cs-sub">One poster for each topic. Each poster holds the tasks, commands, code, diagrams, defaults and fixes that you use while you work. Every fact comes from a lesson or a manual of this course.</p>${search}</header>`;
-  const list = `<section class="cs-index-section" aria-labelledby="topics"><h2 id="topics">Topics</h2><ol class="cs-tiles">${tiles}</ol></section>`;
+  const head = `<header class="cs-index-head"><p class="cs-kicker">AI Engineering from Scratch</p><h1>Cheat sheets</h1><p class="cs-sub">${topics.length} posters. Each poster holds the tasks, commands, code, diagrams, defaults and fixes that you use while you work. Every fact comes from a lesson, a manual or a project of this course.</p>${search}${filters}</header>`;
   const phaseList = byPhase ? `<section class="cs-index-section" aria-labelledby="by-phase"><h2 id="by-phase">By phase</h2><ul class="cs-by-phase">${byPhase}</ul></section>` : '';
-  const how = '<section class="cs-index-section" aria-labelledby="how"><h2 id="how">How to use them</h2><ul class="cs-tips"><li>Each colour means one kind of block. Blue blocks are tasks and commands. Red blocks are fixes. The key is at the top of each poster.</li><li>Click a command to copy it. Replace each value in angle brackets, such as <code>&lt;model&gt;</code>.</li><li>Each block names the lesson or manual section that its facts come from. Open it when you need the reason.</li><li>Print a poster on one or two landscape pages. It fits A4 and Letter paper.</li></ul></section>';
-  return `<main id="main" class="cs-page cs-index">${head}${list}${phaseList}${how}<footer class="cs-foot"><p class="cs-stamp"><span>aiengineeringfromscratch.com${BASE}</span><span>${copyLine(year)}</span></p></footer></main>`;
+  const how = '<section class="cs-index-section" aria-labelledby="how"><h2 id="how">How to use them</h2><ul class="cs-tips"><li>Each colour means one kind of block. Blue blocks are tasks and commands. Red blocks are fixes. The key is at the top of each poster.</li><li>Click a command to copy it. Replace each value in angle brackets, such as <code>&lt;model&gt;</code>.</li><li>The foot of each poster lists the lessons and manuals that it covers. Open one when you need the reason.</li><li>Print a poster on one or two landscape pages. It fits A4 and Letter paper.</li></ul></section>';
+  return `<main id="main" class="cs-page cs-index">${head}${sections}${phaseList}${how}<footer class="cs-foot"><p class="cs-stamp"><span>aiengineeringfromscratch.com${BASE}</span><span>${copyLine(year)}</span></p></footer></main>`;
 }
 
 function shell({ title, description, href, card, main, bodyClass, hue = 222 }, assets) {
@@ -677,11 +931,30 @@ function topicFiles(root) {
   return fs.readdirSync(dir).filter(name => name.endsWith('.md') && name !== 'AUTHORING.md' && name !== 'README.md').sort().map(name => path.join(dir, name));
 }
 
+function trackOf(topic) {
+  if (topic.kind === 'manual') return 'manuals';
+  if (topic.kind === 'project') return 'projects';
+  const counts = new Map();
+  for (const source of topic.sources) {
+    const phase = /^phases\/(\d{2})-/.exec(source);
+    if (phase) counts.set(phase[1], (counts.get(phase[1]) || 0) + (phase[1] === '19' ? 0.5 : 1));
+  }
+  const best = Array.from(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  if (!best) return topic.sources.some(source => source.startsWith('manuals/')) ? 'manuals' : 'projects';
+  return (TRACKS.find(([, , phases]) => phases.includes(best[0])) || TRACKS[0])[0];
+}
+
 function loadTopics(root = REPO_ROOT) {
+  const map = topicMap.loadTopicMap(root);
+  const kinds = new Map(map.topics.map(entry => [entry.id, entry.kind]));
+  const explainers = new Map(map.topics.filter(entry => entry.explainer).map(entry => [entry.id, entry.explainer]));
   return topicFiles(root).map(file => {
     const topic = parseTopic(fs.readFileSync(file, 'utf8'), file);
     topic.file = path.relative(root, file);
     topic.href = `${BASE}/${topic.id}`;
+    topic.kind = kinds.get(topic.id) || 'concept';
+    topic.explainer = explainers.get(topic.id) || '';
+    topic.track = trackOf(topic);
     return topic;
   });
 }
@@ -729,16 +1002,27 @@ function phaseList(root, map) {
   });
 }
 
+function searchRow(title, rest, blockId, showDetail) {
+  const detail = plain(rest);
+  let shown = '';
+  if (showDetail) shown = detail.length <= SEARCH_DETAIL ? detail : `${detail.slice(0, SEARCH_DETAIL - 1)}…`;
+  const spans = (rest.match(/`[^`]+`/g) || []).join(' ').replace(/`/g, '');
+  const extra = factTokens(spans).filter(token => !shown.includes(token) && !title.includes(token));
+  return extra.length ? [title, shown, blockId, extra.join(' ')] : [title, shown, blockId];
+}
+
 function searchIndex(topics) {
   return topics.map(topic => ({
     i: topic.id,
     t: topic.title,
     c: topic.code,
     h: topic.hue,
-    r: topic.blocks.flatMap(block => {
-      if (TABLE_SHAPES[block.type]) return block.rows.map(row => [plain(row[0]), plain(row[1]), block.id]);
-      if (block.type === 'concepts' || block.type === 'glossary') return block.items.map(item => [plain(item.lead), plain(item.text), block.id]);
-      return [[plain(block.title), '', block.id]];
+    k: topic.kind,
+    b: topic.blocks.map(block => block.id),
+    r: topic.blocks.flatMap((block, index) => {
+      if (TABLE_SHAPES[block.type]) return block.rows.map(row => searchRow(plain(row[0]), row.slice(1).join(' · '), index, block.type === 'task-table' || block.type === 'defaults'));
+      if (block.type === 'concepts' || block.type === 'glossary') return block.items.map(item => searchRow(plain(item.lead), item.text, index, block.type === 'glossary'));
+      return [[plain(block.title), '', index]];
     }),
   }));
 }
@@ -842,6 +1126,10 @@ function checkTopic(topic, root = REPO_ROOT, cache = new Map()) {
     if (!fs.existsSync(path.join(root, source))) problems.push(`${topic.file}: source ${source} does not exist`);
   }
   for (const block of topic.blocks) {
+    for (const source of block.from) {
+      if (path.posix.normalize(source) !== source || source.split('/').includes('..') || path.isAbsolute(source)) problems.push(`${topic.file}: block "${block.title}" names ${source}, which is not a plain repository path`);
+      else if (!topic.sources.some(allowed => source === allowed || source.startsWith(`${allowed.replace(/\/+$/, '')}/`))) problems.push(`${topic.file}: block "${block.title}" names ${source}, which is not a source of this topic`);
+    }
     const missing = block.from.filter(source => !fs.existsSync(path.join(root, source)));
     for (const source of missing) problems.push(`${topic.file}: block "${block.title}" names ${source}, which does not exist`);
     if (missing.length) continue;
@@ -854,6 +1142,94 @@ function checkTopic(topic, root = REPO_ROOT, cache = new Map()) {
   const { pages } = layout(topic);
   if (pages > MAX_PAGES) problems.push(`${topic.file}: the poster needs ${pages} pages, the limit is ${MAX_PAGES}`);
   return problems;
+}
+
+const MAINTAINER_ONLY = /capture\/(?:gpu\/)?run\.py|\bpython3? run\.py\b|\brun\.py --(?:check|build-fixtures|only)\b|--build-fixtures|build-manuals\.js|build-cheatsheets\.js|build-projects\.js|audit_manuals|audit_lessons|\bmanual\.json\b|site\/data\.js|\.github\/workflows|\bnode (?:site|scripts)\/|\bcapture kit\b|\btimeoutSeconds\b|SGLANG_KIT_PROFILE|\bREA_COMMAND\b/i;
+const BLANK_CELL = /^(?:|-|tbd|todo|\.\.\.|…)$/i;
+
+function blockTexts(block) {
+  const texts = [block.title];
+  if (block.header) texts.push(block.header.join(' '));
+  if (block.rows) for (const row of block.rows) texts.push(row.join(' '));
+  if (block.items) for (const item of block.items) texts.push(`${item.lead} ${item.text}`);
+  if (block.code) texts.push(...block.code);
+  if (block.nodes) for (const node of block.nodes) texts.push(`${node.label} ${node.sub || ''}`);
+  if (block.edges) for (const edge of block.edges) texts.push(edge.label);
+  return texts.map(plain);
+}
+
+function maintainerContent(topic) {
+  return topic.blocks.filter(block => blockTexts(block).some(text => MAINTAINER_ONLY.test(text))).map(block => block.title);
+}
+
+function incompleteRows(topic) {
+  const found = [];
+  for (const block of topic.blocks) {
+    if (!block.rows) continue;
+    for (const row of block.rows) {
+      if (row.some(cell => BLANK_CELL.test(plain(cell).trim()))) found.push(`${block.title}: ${plain(row[0])}`);
+    }
+  }
+  return found;
+}
+
+const EMPTY_VALUES = /^(?:|-|n\/a|tbd|todo|not given|not covered|not listed|not stated|none stated|no number given|unknown)$/i;
+const QUALITY_RULES = {
+  concept: { doRows: 4, troubleRows: 3 },
+  commands: { doRows: 8, troubleRows: 3, code: true },
+  comparison: { doRows: 3, troubleRows: 3, compare: true },
+  debugging: { doRows: 4, troubleRows: 5 },
+  manual: { doRows: 8, troubleRows: 3, code: true },
+  project: { doRows: 6, troubleRows: 3 },
+};
+
+function blockSize(block) {
+  if (TABLE_SHAPES[block.type]) return block.rows.length;
+  if (block.type === 'annotated-code') return block.code.filter(line => line.trim()).length;
+  if (block.type === 'architecture') return block.nodes.length;
+  return (block.items || []).length;
+}
+
+function qualityReport(topic) {
+  const rules = QUALITY_RULES[topic.kind] || QUALITY_RULES.concept;
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+  const types = new Set(topic.blocks.map(block => block.type));
+  const rows = type => topic.blocks.filter(block => block.type === type).reduce((sum, block) => sum + block.rows.length, 0);
+  const doRows = rows('task-table') + rows('command-table');
+  add('blocks', topic.blocks.length >= 10 && topic.blocks.length <= 14, `${topic.blocks.length} blocks, 10 to 14 needed`);
+  add('variety', types.size >= 6, `${types.size} block types, 6 needed`);
+  add('tasks', doRows >= rules.doRows, `${doRows} task or command rows, ${rules.doRows} needed for a ${topic.kind} sheet`);
+  add('diagram', types.has('flow') || types.has('architecture'), 'a flow or architecture diagram');
+  add('troubleshooting', rows('troubleshooting') >= rules.troubleRows, `${rows('troubleshooting')} troubleshooting rows, ${rules.troubleRows} needed`);
+  add('recall', types.has('qa') || types.has('tips'), 'a qa or tips block');
+  if (rules.code) add('code', types.has('annotated-code'), 'an annotated-code block');
+  if (rules.compare) add('comparison', types.has('comparison'), 'a comparison table');
+  const emptyDefaults = topic.blocks.filter(block => block.type === 'defaults').flatMap(block => block.rows.filter(row => EMPTY_VALUES.test(plain(row[1])))).map(row => plain(row[0]));
+  add('defaults', !emptyDefaults.length, emptyDefaults.length ? `defaults without a value: ${emptyDefaults.join(', ')}` : 'every default has a value');
+  const minimum = { 'annotated-code': 3, architecture: 3, flow: 3 };
+  const thin = topic.blocks.filter(block => blockSize(block) < (minimum[block.type] || 2)).map(block => block.title);
+  add('thin', !thin.length, thin.length ? `thin blocks: ${thin.join(', ')}` : 'no thin block');
+  const seen = new Set();
+  const duplicates = [];
+  for (const block of topic.blocks) {
+    const keys = TABLE_SHAPES[block.type] ? block.rows.map(row => plain(row.join(' ')).toLowerCase()) : (block.items || []).map(item => plain(`${item.lead} ${item.text}`).toLowerCase());
+    for (const key of keys) {
+      if (seen.has(key)) duplicates.push(key);
+      seen.add(key);
+    }
+  }
+  add('duplicates', !duplicates.length, duplicates.length ? `duplicate rows: ${duplicates.slice(0, 3).join(' | ')}` : 'no duplicate row');
+  const maintainer = maintainerContent(topic);
+  add('reader', !maintainer.length, maintainer.length ? `maintainer-only content in: ${maintainer.join(', ')}` : 'learner content only');
+  const incomplete = incompleteRows(topic);
+  add('complete', !incomplete.length, incomplete.length ? `rows with an empty cell: ${incomplete.slice(0, 3).join(' | ')}` : 'every row is complete');
+  const overlaps = topic.blocks.filter(block => block.type === 'architecture').flatMap(block => [false, true].flatMap(narrow => architectureOverlaps(block, narrow).map(problem => `${block.title}${narrow ? ' (narrow)' : ''}: ${problem}`)));
+  add('overlap', !overlaps.length, overlaps.length ? `diagram overlaps: ${overlaps.slice(0, 3).join(' | ')}` : 'no diagram overlap');
+  const { pages } = layout(topic);
+  add('fit', pages <= MAX_PAGES, `${pages} pages, ${MAX_PAGES} at most`);
+  const passed = checks.filter(check => check.pass).length;
+  return { id: topic.id, kind: topic.kind, score: Math.round((passed / checks.length) * 100), pass: passed === checks.length, failures: checks.filter(check => !check.pass).map(check => `${check.name}: ${check.detail}`) };
 }
 
 function checkLinks(built, root = REPO_ROOT) {
@@ -883,6 +1259,8 @@ function checkLinks(built, root = REPO_ROOT) {
       if (phase) continue;
       const manual = /^\/manual-([a-z0-9-]+)$/.exec(target);
       if (manual && manuals.has(manual[1])) continue;
+      const explainer = /^\/(inside-[a-z0-9-]+)$/.exec(target);
+      if (explainer && fs.existsSync(path.join(root, 'site', `${explainer[1]}.html`))) continue;
       broken.push({ page: page.href, href });
     }
   }
@@ -971,7 +1349,14 @@ function writePrint(outDir, options = {}) {
   return built;
 }
 
+const CLI_FLAGS = new Set(['--check', '--check-topic', '--check-quality', '--status', '--print', '--edition', '--katex']);
+
 function main(argv) {
+  const unknown = argv.filter(arg => arg.startsWith('--') && !CLI_FLAGS.has(arg));
+  if (unknown.length) {
+    console.error(`Unknown option: ${unknown.join(', ')}. Options: ${Array.from(CLI_FLAGS).join(', ')}`);
+    return 2;
+  }
   const flag = name => argv.includes(name);
   const value = name => {
     const index = argv.indexOf(name);
@@ -998,6 +1383,18 @@ function main(argv) {
     console.log(`Wrote the print edition of ${built.topics.length} topic posters to ${value('--print')}/print.html`);
     return 0;
   }
+  if (flag('--check-quality')) {
+    const reports = loadTopics().map(qualityReport);
+    for (const report of reports) console.log(`${String(report.score).padStart(3)}  ${report.id}${report.pass ? '' : `  ${report.failures.join('; ')}`}`);
+    const failed = reports.filter(report => !report.pass);
+    console.log(`Quality: ${reports.length - failed.length} of ${reports.length} sheets pass the rubric. Mean score ${Math.round(reports.reduce((sum, report) => sum + report.score, 0) / reports.length)}.`);
+    return failed.length ? 1 : 0;
+  }
+  if (flag('--status')) {
+    const topics = loadTopics();
+    console.log(JSON.stringify(topicMap.mapStatus(topicMap.loadTopicMap(REPO_ROOT), topics, REPO_ROOT), null, 2));
+    return 0;
+  }
   if (flag('--check')) {
     const invalid = topicErrors(loadTopics());
     if (invalid.length) {
@@ -1016,7 +1413,16 @@ function main(argv) {
     const codes = first.topics.map(topic => topic.code);
     if (new Set(codes).size !== codes.length) problems.push('two topics share a code');
     for (const item of checkLinks(first)) problems.push(`broken link on ${item.page}: ${item.href}`);
+    const map = topicMap.loadTopicMap(REPO_ROOT);
+    problems.push(...topicMap.mapProblems(map, first.topics, REPO_ROOT));
+    const evidence = evidenceCheck.checkEvidence(map, first.topics, REPO_ROOT);
+    problems.push(...evidence.problems);
+    const status = topicMap.mapStatus(map, first.topics, REPO_ROOT);
     console.log(`Checked ${first.topics.length} cheat sheet topics (${first.topics.reduce((sum, topic) => sum + topic.blocks.length, 0)} blocks).`);
+    console.log(`Resolved ${evidence.refs} evidence references in ${first.topics.length} evidence files.`);
+    console.log(`Coverage: ${status.coverage.covered} of ${status.coverage.total} lessons, manuals and projects are in ${map.topics.length} topics (${status.coverage.lessons} of ${status.coverage.lessonTotal} lessons).`);
+    if (status.missing.length) console.log(`${status.missing.length} topics have no sheet yet: ${status.missing.join(', ')}. The cheat sheet generate workflow writes them.`);
+    if (status.stale.length) console.log(`${status.stale.length} sheets are older than their sources: ${status.stale.join(', ')}.`);
     for (const problem of problems) console.error(`  ${problem}`);
     return problems.length ? 1 : 0;
   }
@@ -1027,4 +1433,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { parseTopic, loadTopics, buildCheatsheets, writeCheatsheets, writePrint, printHtml, prerenderMath, checkTopic, checkLinks, coverage, layout, factTokens, blockFacts, architectureSvg, flowSvg, TYPES };
+module.exports = { qualityReport, QUALITY_RULES, MAINTAINER_ONLY, maintainerContent, incompleteRows, trackOf, parseTopic, loadTopics, buildCheatsheets, writeCheatsheets, writePrint, printHtml, prerenderMath, checkTopic, checkLinks, coverage, layout, factTokens, blockFacts, architectureSvg, architectureLayout, architectureOverlaps, flowSvg, TYPES };
